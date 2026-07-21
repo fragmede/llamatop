@@ -29,8 +29,11 @@ Build a dependency-free macOS terminal dashboard that answers: “Is llama.cpp a
 - [x] Run the full test suite.
 - [x] Build an optimized release binary.
 - [x] Smoke-test `--help`, `--once`, argument errors, and the interactive refresh loop.
-- [ ] Run Standards and Spec reviews and resolve actionable findings.
+- [x] Run Standards and Spec reviews and resolve actionable findings.
 
 ## Review
 
-Implementation and live verification complete. Final two-axis review pending.
+- Standards re-review: no remaining documented-standard violations or actionable code smells.
+- Spec re-review: no remaining missing, partial, incorrect, or out-of-scope behavior.
+- Verification: 26 tests pass with warnings treated as errors; optimized release build succeeds.
+- Live smoke test: found the running `llama-server`, reported CPU within normal sampling variance of `ps`, showed resident model memory, and read root-free system GPU utilization.
