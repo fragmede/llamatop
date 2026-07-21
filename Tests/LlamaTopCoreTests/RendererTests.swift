@@ -15,7 +15,7 @@ final class RendererTests: XCTestCase {
                     parentPID: 1,
                     cpuPercent: 420,
                     residentBytes: UInt64(8) * 1_024 * 1_024 * 1_024,
-                    elapsed: "02:04",
+                    elapsedSeconds: 124,
                     executable: "llama-cli",
                     command: "llama-cli -m model.gguf"
                 )

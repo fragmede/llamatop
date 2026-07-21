@@ -10,7 +10,7 @@ Build a dependency-free macOS terminal dashboard that answers: “Is llama.cpp a
 - [x] Show per-process PID, CPU usage, resident memory, elapsed time, and command.
 - [x] Show aggregate llama.cpp CPU usage as both percent and approximate cores busy.
 - [x] Show system-wide Apple GPU utilization when IOKit exposes it, clearly labelled as system-wide rather than per-process.
-- [x] Show a plain-language `BUSY`, `IDLE`, or `NOT FOUND` verdict.
+- [x] Show a plain-language `BUSY`, `IDLE`, `WARMING UP`, or `NOT FOUND` verdict.
 - [x] Refresh in place in an interactive terminal and support a one-shot mode for scripts.
 - [x] Work without third-party runtime dependencies or elevated privileges.
 - [x] Explain installation, telemetry meaning, limitations, and usage in the README.

@@ -9,7 +9,7 @@ do {
         exit(EXIT_SUCCESS)
     }
     if options.showVersion {
-        print("LlamaTop 0.1.0")
+        print(LlamaTopVersion.displayName)
         exit(EXIT_SUCCESS)
     }
 

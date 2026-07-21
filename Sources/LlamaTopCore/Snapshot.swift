@@ -5,7 +5,7 @@ public struct MonitoredProcess: Equatable, Sendable {
     public let parentPID: Int32
     public let cpuPercent: Double?
     public let residentBytes: UInt64
-    public let elapsed: String
+    public let elapsedSeconds: TimeInterval
     public let executable: String
     public let command: String
 
@@ -14,7 +14,7 @@ public struct MonitoredProcess: Equatable, Sendable {
         parentPID: Int32,
         cpuPercent: Double?,
         residentBytes: UInt64,
-        elapsed: String,
+        elapsedSeconds: TimeInterval,
         executable: String,
         command: String
     ) {
@@ -22,7 +22,7 @@ public struct MonitoredProcess: Equatable, Sendable {
         self.parentPID = parentPID
         self.cpuPercent = cpuPercent
         self.residentBytes = residentBytes
-        self.elapsed = elapsed
+        self.elapsedSeconds = elapsedSeconds
         self.executable = executable
         self.command = command
     }
@@ -64,12 +64,13 @@ public struct SystemSnapshot: Equatable, Sendable {
     }
 
     public var activity: ActivityState {
-        ActivityClassifier.classify(processes: processes, gpuPercent: gpuPercent)
+        ActivityClassifier.classify(processes: processes)
     }
 }
 
 public enum ActivityState: String, Equatable, Sendable {
     case busy = "BUSY"
     case idle = "IDLE"
+    case warmingUp = "WARMING UP"
     case notFound = "NOT FOUND"
 }

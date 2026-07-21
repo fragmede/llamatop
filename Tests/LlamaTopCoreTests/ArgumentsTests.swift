@@ -27,5 +27,6 @@ final class ArgumentsTests: XCTestCase {
     func testRecognizesHelpAndVersion() throws {
         XCTAssertTrue(try Options.parse(["--help"]).showHelp)
         XCTAssertTrue(try Options.parse(["--version"]).showVersion)
+        XCTAssertTrue(Options.help.contains(LlamaTopVersion.current))
     }
 }

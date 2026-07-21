@@ -49,7 +49,7 @@ public struct Options: Equatable, Sendable {
     }
 
     public static let help = """
-    LlamaTop 0.1.0 — see whether llama.cpp is actually working on your Mac
+    \(LlamaTopVersion.displayName) — see whether llama.cpp is actually working on your Mac
 
     USAGE
       llamatop [options]

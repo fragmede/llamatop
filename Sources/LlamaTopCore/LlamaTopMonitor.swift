@@ -1,11 +1,10 @@
-import Darwin
 import Foundation
 
 public final class LlamaTopMonitor {
     private let processProbe: any ProcessProbing
     private let gpuProbe: any GPUProbing
     private let matcher: LlamaProcessMatcher
-    private let machineName: String
+    private let environment: any MonitorEnvironment
     private var previousCPUTimeByIdentity: [ProcessIdentity: UInt64] = [:]
     private var previousSampleTicks: UInt64?
 
@@ -14,7 +13,7 @@ public final class LlamaTopMonitor {
             processProbe: DarwinProcessProbe(),
             gpuProbe: AppleGPUProbe(),
             matcher: LlamaProcessMatcher(customTerms: customMatchTerms),
-            machineName: Self.readMachineName()
+            environment: SystemMonitorEnvironment()
         )
     }
 
@@ -22,17 +21,17 @@ public final class LlamaTopMonitor {
         processProbe: any ProcessProbing,
         gpuProbe: any GPUProbing,
         matcher: LlamaProcessMatcher,
-        machineName: String
+        environment: any MonitorEnvironment
     ) {
         self.processProbe = processProbe
         self.gpuProbe = gpuProbe
         self.matcher = matcher
-        self.machineName = machineName
+        self.environment = environment
     }
 
     public func nextSnapshot() -> SystemSnapshot {
-        let now = Date()
-        let sampleTicks = mach_absolute_time()
+        let now = environment.currentDate()
+        let sampleTicks = environment.currentUptimeTicks()
         let elapsed = previousSampleTicks.map { previous in
             sampleTicks >= previous ? sampleTicks - previous : 0
         } ?? 0
@@ -50,7 +49,7 @@ public final class LlamaTopMonitor {
                     elapsedTicks: elapsed
                 ),
                 residentBytes: raw.residentBytes,
-                elapsed: Self.formatDuration(raw.elapsedSeconds),
+                elapsedSeconds: raw.elapsedSeconds,
                 executable: raw.executable,
                 command: raw.command
             )
@@ -71,39 +70,12 @@ public final class LlamaTopMonitor {
 
         return SystemSnapshot(
             timestamp: now,
-            machineName: machineName,
-            logicalCPUCount: max(1, ProcessInfo.processInfo.processorCount),
-            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
+            machineName: environment.machineName,
+            logicalCPUCount: environment.logicalCPUCount,
+            physicalMemoryBytes: environment.physicalMemoryBytes,
             gpuPercent: gpuProbe.utilization(),
             processes: processes
         )
     }
 
-    private static func formatDuration(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        let days = seconds / 86_400
-        let hours = seconds % 86_400 / 3_600
-        let minutes = seconds % 3_600 / 60
-        let remainder = seconds % 60
-        if days > 0 {
-            return String(format: "%d-%02d:%02d:%02d", days, hours, minutes, remainder)
-        }
-        if hours > 0 {
-            return String(format: "%02d:%02d:%02d", hours, minutes, remainder)
-        }
-        return String(format: "%02d:%02d", minutes, remainder)
-    }
-
-    private static func readMachineName() -> String {
-        var size = 0
-        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 1 else {
-            return "Apple Silicon Mac"
-        }
-        var bytes = [CChar](repeating: 0, count: size)
-        guard sysctlbyname("machdep.cpu.brand_string", &bytes, &size, nil, 0) == 0 else {
-            return "Apple Silicon Mac"
-        }
-        let utf8 = bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-        return String(decoding: utf8, as: UTF8.self)
-    }
 }

@@ -55,7 +55,7 @@ public struct DashboardRenderer: Sendable {
             process.pid,
             cpu,
             bytes(process.residentBytes),
-            process.elapsed
+            duration(process.elapsedSeconds)
         )
         return prefix + truncated(process.command, to: max(10, width - prefix.count))
     }
@@ -76,6 +76,7 @@ public struct DashboardRenderer: Sendable {
         switch state {
         case .busy: "1;32"
         case .idle: "1;33"
+        case .warmingUp: "1;36"
         case .notFound: "1;31"
         }
     }
@@ -93,6 +94,21 @@ public struct DashboardRenderer: Sendable {
             unit += 1
         }
         return unit == 0 ? "\(value) B" : String(format: "%.1f %@", amount, units[unit])
+    }
+
+    private func duration(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        let days = seconds / 86_400
+        let hours = seconds % 86_400 / 3_600
+        let minutes = seconds % 3_600 / 60
+        let remainder = seconds % 60
+        if days > 0 {
+            return String(format: "%d-%02d:%02d:%02d", days, hours, minutes, remainder)
+        }
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, remainder)
+        }
+        return String(format: "%02d:%02d", minutes, remainder)
     }
 
     private func truncated(_ value: String, to length: Int) -> String {

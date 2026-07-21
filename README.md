@@ -60,7 +60,7 @@ llamatop --match my-inference-worker
 - **Llama CPU** is sampled from each matching process using macOS `libproc`. Like `top`, 100% means one fully occupied core, so a multithreaded process can exceed 100%. The bar is normalized against all CPU cores; the number remains the raw top-style percentage.
 - **Llama RAM** is resident memory for matching processes. This includes resident pages of memory-mapped model files, which makes it more useful than private-memory figures for llama.cpp.
 - **Apple GPU** is the whole GPU's device utilization, read directly from IOKit. macOS does not provide dependable, root-free per-process Metal attribution here. Other Metal apps can contribute to this number, so LlamaTop never uses GPU activity alone to call a llama.cpp process busy.
-- **BUSY** means a matching process is consuming at least 1% of one core. **IDLE** means the process exists but is below that noise floor. **NOT FOUND** means no command matched.
+- **BUSY** means a matching process is consuming at least 1% of one core. **IDLE** means the process exists but is below that noise floor. **WARMING UP** means a newly found process needs one more sample before its activity is known. **NOT FOUND** means no command matched.
 
 GPU registry keys are undocumented by Apple and can vary across hardware or macOS releases. LlamaTop shows `unavailable` instead of guessing when the metric is absent.
 

@@ -3,26 +3,33 @@ import XCTest
 
 final class ActivityTests: XCTestCase {
     func testNotFoundWithoutProcesses() {
-        XCTAssertEqual(ActivityClassifier.classify(processes: [], gpuPercent: 80), .notFound)
+        XCTAssertEqual(ActivityClassifier.classify(processes: []), .notFound)
     }
 
     func testBusyFromCPUActivity() {
         XCTAssertEqual(
-            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 12)], gpuPercent: 0),
+            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 12)]),
             .busy
         )
     }
 
-    func testDoesNotAttributeSystemGPUActivityToAnIdleLlamaProcess() {
+    func testClassifiesKnownLowCPUAsIdle() {
         XCTAssertEqual(
-            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 0)], gpuPercent: 30),
+            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 0)]),
             .idle
+        )
+    }
+
+    func testReportsWarmingUpWhenCPUIsNotKnownYet() {
+        XCTAssertEqual(
+            ActivityClassifier.classify(processes: [.fixture(cpuPercent: nil)]),
+            .warmingUp
         )
     }
 
     func testIdleBelowNoiseThresholds() {
         XCTAssertEqual(
-            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 0.2)], gpuPercent: 2),
+            ActivityClassifier.classify(processes: [.fixture(cpuPercent: 0.2)]),
             .idle
         )
     }
@@ -35,7 +42,7 @@ private extension MonitoredProcess {
             parentPID: 1,
             cpuPercent: cpuPercent,
             residentBytes: 1_024,
-            elapsed: "00:01",
+            elapsedSeconds: 1,
             executable: "llama-cli",
             command: "llama-cli -m model.gguf"
         )

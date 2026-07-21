@@ -10,7 +10,7 @@ final class NativeProbeSmokeTests: XCTestCase {
 
         XCTAssertFalse(current.executable.isEmpty)
         XCTAssertGreaterThan(current.residentBytes, 0)
-        XCTAssertGreaterThanOrEqual(current.totalCPUTimeTicks, 0)
+        XCTAssertGreaterThan(current.totalCPUTimeTicks, 0)
     }
 
     func testGPUProbeReturnsAValidPercentageWhenSupported() {
