@@ -56,8 +56,12 @@ Build a dependency-free macOS terminal dashboard that answers: “Is llama.cpp a
 - [x] Test the expanded dashboard at narrow and wide terminal widths.
 - [x] Run the complete suite and warnings-as-errors release build.
 - [x] Exercise the dashboard against live llama.cpp and Apple Silicon telemetry.
-- [ ] Run Standards and Spec reviews and resolve actionable findings.
+- [x] Run Standards and Spec reviews and resolve actionable findings.
 
 ### Review
 
-Implementation and live verification complete. Final two-axis review pending.
+- Standards re-review: no remaining violations or actionable code smells.
+- Spec re-review: no remaining missing, partial, incorrect, or out-of-scope behavior.
+- Verification: 37 tests pass with warnings treated as errors; the optimized 0.2.0 release build succeeds.
+- Width verification: every non-ANSI line fits at 60, 80, and 100 columns; live TTY rendering follows terminal width.
+- Live telemetry: 16 logical CPU bars and the 12P/4E topology rendered alongside one 40-core GPU device, three pipeline counters, and unified-memory statistics.
