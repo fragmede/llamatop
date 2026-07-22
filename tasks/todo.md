@@ -37,3 +37,27 @@ Build a dependency-free macOS terminal dashboard that answers: “Is llama.cpp a
 - Spec re-review: no remaining missing, partial, incorrect, or out-of-scope behavior.
 - Verification: 26 tests pass with warnings treated as errors; optimized release build succeeds.
 - Live smoke test: found the running `llama-server`, reported CPU within normal sampling variance of `ps`, showed resident model memory, and read root-free system GPU utilization.
+
+## Expanded hardware dashboard
+
+### Scope
+
+- [x] Show a system-wide utilization bar for every logical CPU core.
+- [x] Summarize Apple Silicon performance and efficiency core counts when macOS exposes them.
+- [x] Show separate system-wide Apple GPU device, renderer, and tiler utilization bars.
+- [x] Show Apple GPU core count and root-free in-use/allocated GPU memory information.
+- [x] Add a utilization bar to llama.cpp resident memory without implying dedicated VRAM.
+- [x] Keep unavailable or undocumented metrics optional and clearly qualified.
+
+### Verification
+
+- [x] Test CPU tick deltas, counter rollover, core-count changes, and warm-up samples.
+- [x] Test richer GPU property parsing with missing and alternate value types.
+- [x] Test the expanded dashboard at narrow and wide terminal widths.
+- [x] Run the complete suite and warnings-as-errors release build.
+- [x] Exercise the dashboard against live llama.cpp and Apple Silicon telemetry.
+- [ ] Run Standards and Spec reviews and resolve actionable findings.
+
+### Review
+
+Implementation and live verification complete. Final two-axis review pending.

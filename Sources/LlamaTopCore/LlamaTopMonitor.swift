@@ -2,15 +2,18 @@ import Foundation
 
 public final class LlamaTopMonitor {
     private let processProbe: any ProcessProbing
+    private let cpuProbe: any CPUCoreProbing
     private let gpuProbe: any GPUProbing
     private let matcher: LlamaProcessMatcher
     private let environment: any MonitorEnvironment
     private var previousCPUTimeByIdentity: [ProcessIdentity: UInt64] = [:]
     private var previousSampleTicks: UInt64?
+    private var previousCoreTicks: [CPUCoreTicks]?
 
     public convenience init(customMatchTerms: [String] = []) {
         self.init(
             processProbe: DarwinProcessProbe(),
+            cpuProbe: DarwinCPUCoreProbe(),
             gpuProbe: AppleGPUProbe(),
             matcher: LlamaProcessMatcher(customTerms: customMatchTerms),
             environment: SystemMonitorEnvironment()
@@ -19,11 +22,13 @@ public final class LlamaTopMonitor {
 
     init(
         processProbe: any ProcessProbing,
+        cpuProbe: any CPUCoreProbing,
         gpuProbe: any GPUProbing,
         matcher: LlamaProcessMatcher,
         environment: any MonitorEnvironment
     ) {
         self.processProbe = processProbe
+        self.cpuProbe = cpuProbe
         self.gpuProbe = gpuProbe
         self.matcher = matcher
         self.environment = environment
@@ -37,6 +42,16 @@ public final class LlamaTopMonitor {
         } ?? 0
         let rawProcesses = processProbe.capture(at: now).filter {
             matcher.matches(executable: $0.executable, command: $0.command)
+        }
+        let corePercentages: [Double?]
+        if let currentCoreTicks = cpuProbe.capture() {
+            corePercentages = CPUCoreUsageCalculator.percentages(
+                previous: previousCoreTicks,
+                current: currentCoreTicks
+            )
+            previousCoreTicks = currentCoreTicks
+        } else {
+            corePercentages = Array(repeating: nil, count: environment.logicalCPUCount)
         }
 
         let processes = rawProcesses.map { raw in
@@ -71,9 +86,15 @@ public final class LlamaTopMonitor {
         return SystemSnapshot(
             timestamp: now,
             machineName: environment.machineName,
-            logicalCPUCount: environment.logicalCPUCount,
+            systemCPU: SystemCPUStatistics(
+                cores: corePercentages.enumerated().map {
+                    CPUCoreUsage(index: $0.offset, percent: $0.element)
+                },
+                performanceCoreCount: environment.performanceCoreCount,
+                efficiencyCoreCount: environment.efficiencyCoreCount
+            ),
             physicalMemoryBytes: environment.physicalMemoryBytes,
-            gpuPercent: gpuProbe.utilization(),
+            gpu: gpuProbe.capture(),
             processes: processes
         )
     }

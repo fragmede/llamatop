@@ -10,38 +10,150 @@ public struct DashboardRenderer: Sendable {
     }
 
     public func render(_ snapshot: SystemSnapshot) -> String {
-        let state = snapshot.activity
-        let stateText = styled(state.rawValue, code: stateColor(state))
         let processCount = snapshot.processes.count
-        let noun = processCount == 1 ? "process" : "processes"
-        let cpuCapacity = Double(snapshot.logicalCPUCount) * 100
-        let normalizedCPU = cpuCapacity > 0 ? snapshot.totalCPUPercent / cpuCapacity * 100 : 0
-        let cpuValue = snapshot.processes.contains { $0.cpuPercent == nil }
+        let coreCount = max(1, snapshot.systemCPU.cores.count)
+        let normalizedLlamaCPU = snapshot.totalCPUPercent / (Double(coreCount) * 100) * 100
+        let llamaCPUValue = snapshot.processes.contains { $0.cpuPercent == nil }
             ? "warming up"
-            : String(format: "%.1f%%  ≈ %.1f cores", snapshot.totalCPUPercent, snapshot.totalCPUPercent / 100)
-        let gpuValue = snapshot.gpuPercent.map { String(format: "%.1f%% system-wide", $0) }
-            ?? "unavailable"
+            : String(
+                format: "%.1f%%  ≈ %.1f / %d cores",
+                snapshot.totalCPUPercent,
+                snapshot.totalCPUPercent / 100,
+                coreCount
+            )
+        let llamaMemoryPercent = percentage(
+            numerator: snapshot.totalResidentBytes,
+            denominator: snapshot.physicalMemoryBytes
+        )
 
         var lines = [
-            styled("LLAMATOP", code: "1;36") + "  \(snapshot.machineName)",
-            "\(stateText)  \(processCount) llama.cpp \(noun)",
+            header(machineName: snapshot.machineName),
+            statusLine(state: snapshot.activity, processCount: processCount),
             "",
-            metricLine(label: "Llama CPU", percent: normalizedCPU, value: cpuValue),
-            metricLine(label: "Apple GPU", percent: snapshot.gpuPercent, value: gpuValue),
-            "Llama RAM  \(bytes(snapshot.totalResidentBytes)) / \(bytes(snapshot.physicalMemoryBytes)) physical",
+            "Llama workload (llama.cpp-only)",
+            metricLine(label: "CPU", percent: normalizedLlamaCPU, value: llamaCPUValue),
+            metricLine(
+                label: "RAM",
+                percent: llamaMemoryPercent,
+                value: "\(bytes(snapshot.totalResidentBytes)) / \(bytes(snapshot.physicalMemoryBytes)) physical"
+            ),
             "",
+            cpuHeading(snapshot.systemCPU),
         ]
+        lines.append(metricLine(
+            label: "Total",
+            percent: snapshot.systemCPU.averagePercent,
+            value: percentValue(snapshot.systemCPU.averagePercent)
+        ))
+        lines.append(contentsOf: coreGrid(snapshot.systemCPU.cores))
+        lines.append("")
+        lines.append(contentsOf: gpuLines(snapshot.gpu, physicalMemoryBytes: snapshot.physicalMemoryBytes))
+        lines.append("")
 
         if snapshot.processes.isEmpty {
-            lines.append("No llama.cpp process found. For renamed wrappers, try --match TEXT.")
+            lines.append("No llama.cpp process found.")
+            lines.append("For renamed wrappers, try --match TEXT.")
         } else {
             lines.append(processHeader)
             lines.append(contentsOf: snapshot.processes.map(processLine))
         }
 
         lines.append("")
-        lines.append("GPU is system-wide and may include other apps; CPU and RAM are llama.cpp-only.")
+        lines.append("Core and GPU bars are system-wide.")
+        lines.append("Llama CPU and RAM are llama.cpp-only.")
+        lines.append("GPU pipelines are not separate GPUs or additive.")
         return lines.joined(separator: "\n")
+    }
+
+    private func header(machineName: String) -> String {
+        let prefix = "LLAMATOP  "
+        let name = truncated(machineName, to: max(1, width - prefix.count))
+        return styled("LLAMATOP", code: "1;36") + "  " + name
+    }
+
+    private func statusLine(state: ActivityState, processCount: Int) -> String {
+        let noun = processCount == 1 ? "process" : "processes"
+        let plainSuffix = "  \(processCount) llama.cpp \(noun)"
+        return styled(state.rawValue, code: stateColor(state)) + plainSuffix
+    }
+
+    private func cpuHeading(_ statistics: SystemCPUStatistics) -> String {
+        if let performance = statistics.performanceCoreCount,
+           let efficiency = statistics.efficiencyCoreCount {
+            return "CPU logical cores (system-wide · \(performance)P + \(efficiency)E)"
+        }
+        return "CPU logical cores (system-wide)"
+    }
+
+    private func coreGrid(_ cores: [CPUCoreUsage]) -> [String] {
+        guard !cores.isEmpty else { return ["Core utilization unavailable"] }
+        let columns = max(1, (width + 2) / 20)
+        return stride(from: 0, to: cores.count, by: columns).map { start in
+            let end = min(start + columns, cores.count)
+            return cores[start..<end].map(coreCell).joined(separator: "  ")
+        }
+    }
+
+    private func coreCell(_ core: CPUCoreUsage) -> String {
+        let value = core.percent.map { String(format: "%3.0f%%", clamped($0)) } ?? " --%"
+        return String(format: "C%02d", core.index) + " " + bar(core.percent, length: 7) + " " + value
+    }
+
+    private func gpuLines(_ statistics: GPUStatistics?, physicalMemoryBytes: UInt64) -> [String] {
+        var heading: String
+        if let coreCount = statistics?.coreCount {
+            heading = "Apple GPU (\(coreCount) cores · system-wide)"
+        } else {
+            heading = "Apple GPU activity (system-wide)"
+        }
+        if let model = statistics?.model, !model.isEmpty {
+            heading += " · \(model)"
+        }
+
+        var lines = [truncated(heading, to: width)]
+        lines.append(metricLine(
+            label: "Device",
+            percent: statistics?.devicePercent,
+            value: percentValue(statistics?.devicePercent)
+        ))
+        if let renderer = statistics?.rendererPercent {
+            lines.append(metricLine(
+                label: "Renderer",
+                percent: renderer,
+                value: percentValue(renderer)
+            ))
+        }
+        if let tiler = statistics?.tilerPercent {
+            lines.append(metricLine(
+                label: "Tiler",
+                percent: tiler,
+                value: percentValue(tiler)
+            ))
+        }
+        if let inUse = statistics?.inUseSystemMemoryBytes
+            ?? statistics?.allocatedSystemMemoryBytes {
+            let value = gpuMemoryValue(
+                inUseBytes: statistics?.inUseSystemMemoryBytes,
+                allocatedBytes: statistics?.allocatedSystemMemoryBytes
+            )
+            lines.append(metricLine(
+                label: "GPU Memory",
+                percent: percentage(numerator: inUse, denominator: physicalMemoryBytes),
+                value: value
+            ))
+        }
+        return lines
+    }
+
+    private func gpuMemoryValue(inUseBytes: UInt64?, allocatedBytes: UInt64?) -> String {
+        var parts: [String] = []
+        if let inUseBytes { parts.append("\(bytes(inUseBytes)) in use") }
+        if let allocatedBytes { parts.append("\(bytes(allocatedBytes)) allocated") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func percentValue(_ percent: Double?) -> String {
+        percent.map { String(format: "%.1f%% system-wide", clamped($0)) } ?? "unavailable"
     }
 
     private var processHeader: String {
@@ -57,19 +169,24 @@ public struct DashboardRenderer: Sendable {
             bytes(process.residentBytes),
             duration(process.elapsedSeconds)
         )
-        return prefix + truncated(process.command, to: max(10, width - prefix.count))
+        return prefix + truncated(process.command, to: max(1, width - prefix.count))
     }
 
     private func metricLine(label: String, percent: Double?, value: String) -> String {
-        let labelField = label.padding(toLength: 10, withPad: " ", startingAt: 0)
-        return "\(labelField) \(bar(percent))  \(value)"
+        let labelWidth = 10
+        let labelField = truncated(label, to: labelWidth)
+            .padding(toLength: labelWidth, withPad: " ", startingAt: 0)
+        let maxValueLength = max(1, width - labelWidth - 11)
+        let fittedValue = truncated(value, to: maxValueLength)
+        let barLength = min(40, max(6, width - labelWidth - 5 - fittedValue.count))
+        return "\(labelField) \(bar(percent, length: barLength))  \(fittedValue)"
     }
 
-    private func bar(_ percent: Double?) -> String {
-        let length = max(10, min(28, width - 54))
+    private func bar(_ percent: Double?, length: Int) -> String {
         guard let percent else { return "[\(String(repeating: "·", count: length))]" }
-        let filled = Int((min(100, max(0, percent)) / 100 * Double(length)).rounded())
-        return "[\(styled(String(repeating: "█", count: filled), code: "32"))\(String(repeating: "░", count: length - filled))]"
+        let filled = Int((clamped(percent) / 100 * Double(length)).rounded())
+        let active = styled(String(repeating: "█", count: filled), code: "32")
+        return "[\(active)\(String(repeating: "░", count: length - filled))]"
     }
 
     private func stateColor(_ state: ActivityState) -> String {
@@ -83,6 +200,15 @@ public struct DashboardRenderer: Sendable {
 
     private func styled(_ value: String, code: String) -> String {
         color ? "\u{001B}[\(code)m\(value)\u{001B}[0m" : value
+    }
+
+    private func clamped(_ percent: Double) -> Double {
+        min(100, max(0, percent))
+    }
+
+    private func percentage(numerator: UInt64, denominator: UInt64) -> Double? {
+        guard denominator > 0 else { return nil }
+        return Double(numerator) / Double(denominator) * 100
     }
 
     private func bytes(_ value: UInt64) -> String {

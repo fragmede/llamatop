@@ -28,27 +28,87 @@ public struct MonitoredProcess: Equatable, Sendable {
     }
 }
 
+public struct CPUCoreUsage: Equatable, Sendable {
+    public let index: Int
+    public let percent: Double?
+
+    public init(index: Int, percent: Double?) {
+        self.index = index
+        self.percent = percent
+    }
+}
+
+public struct SystemCPUStatistics: Equatable, Sendable {
+    public let cores: [CPUCoreUsage]
+    public let performanceCoreCount: Int?
+    public let efficiencyCoreCount: Int?
+
+    public init(
+        cores: [CPUCoreUsage],
+        performanceCoreCount: Int?,
+        efficiencyCoreCount: Int?
+    ) {
+        self.cores = cores
+        self.performanceCoreCount = performanceCoreCount
+        self.efficiencyCoreCount = efficiencyCoreCount
+    }
+
+    public var averagePercent: Double? {
+        let known = cores.compactMap(\.percent)
+        guard !known.isEmpty else { return nil }
+        return known.reduce(0, +) / Double(known.count)
+    }
+}
+
+public struct GPUStatistics: Equatable, Sendable {
+    public let model: String?
+    public let coreCount: Int?
+    public let devicePercent: Double?
+    public let rendererPercent: Double?
+    public let tilerPercent: Double?
+    public let allocatedSystemMemoryBytes: UInt64?
+    public let inUseSystemMemoryBytes: UInt64?
+
+    public init(
+        model: String?,
+        coreCount: Int?,
+        devicePercent: Double?,
+        rendererPercent: Double?,
+        tilerPercent: Double?,
+        allocatedSystemMemoryBytes: UInt64?,
+        inUseSystemMemoryBytes: UInt64?
+    ) {
+        self.model = model
+        self.coreCount = coreCount
+        self.devicePercent = devicePercent
+        self.rendererPercent = rendererPercent
+        self.tilerPercent = tilerPercent
+        self.allocatedSystemMemoryBytes = allocatedSystemMemoryBytes
+        self.inUseSystemMemoryBytes = inUseSystemMemoryBytes
+    }
+}
+
 public struct SystemSnapshot: Equatable, Sendable {
     public let timestamp: Date
     public let machineName: String
-    public let logicalCPUCount: Int
+    public let systemCPU: SystemCPUStatistics
     public let physicalMemoryBytes: UInt64
-    public let gpuPercent: Double?
+    public let gpu: GPUStatistics?
     public let processes: [MonitoredProcess]
 
     public init(
         timestamp: Date,
         machineName: String,
-        logicalCPUCount: Int,
+        systemCPU: SystemCPUStatistics,
         physicalMemoryBytes: UInt64,
-        gpuPercent: Double?,
+        gpu: GPUStatistics?,
         processes: [MonitoredProcess]
     ) {
         self.timestamp = timestamp
         self.machineName = machineName
-        self.logicalCPUCount = logicalCPUCount
+        self.systemCPU = systemCPU
         self.physicalMemoryBytes = physicalMemoryBytes
-        self.gpuPercent = gpuPercent
+        self.gpu = gpu
         self.processes = processes
     }
 

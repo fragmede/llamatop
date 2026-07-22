@@ -13,10 +13,26 @@ final class NativeProbeSmokeTests: XCTestCase {
         XCTAssertGreaterThan(current.totalCPUTimeTicks, 0)
     }
 
-    func testGPUProbeReturnsAValidPercentageWhenSupported() {
-        if let percent = AppleGPUProbe().utilization() {
-            XCTAssertGreaterThanOrEqual(percent, 0)
-            XCTAssertLessThanOrEqual(percent, 100)
+    func testCPUCoreProbeReturnsCumulativeTicks() throws {
+        let cores = try XCTUnwrap(DarwinCPUCoreProbe().capture())
+
+        XCTAssertFalse(cores.isEmpty)
+        XCTAssertTrue(cores.allSatisfy { $0.user &+ $0.system &+ $0.idle &+ $0.nice > 0 })
+    }
+
+    func testGPUProbeReturnsValidStatisticsWhenSupported() {
+        if let statistics = AppleGPUProbe().capture() {
+            for percent in [
+                statistics.devicePercent,
+                statistics.rendererPercent,
+                statistics.tilerPercent,
+            ].compactMap({ $0 }) {
+                XCTAssertGreaterThanOrEqual(percent, 0)
+                XCTAssertLessThanOrEqual(percent, 100)
+            }
+            if let coreCount = statistics.coreCount {
+                XCTAssertGreaterThan(coreCount, 0)
+            }
         }
     }
 }

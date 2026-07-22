@@ -2,6 +2,16 @@ import Darwin
 import Foundation
 import LlamaTopCore
 
+func terminalWidth(interactive: Bool) -> Int {
+    if interactive {
+        var size = winsize()
+        if ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0, size.ws_col > 0 {
+            return Int(size.ws_col)
+        }
+    }
+    return Int(ProcessInfo.processInfo.environment["COLUMNS"] ?? "") ?? 100
+}
+
 do {
     let options = try Options.parse(Array(CommandLine.arguments.dropFirst()))
     if options.showHelp {
@@ -15,14 +25,13 @@ do {
 
     let interactive = isatty(STDOUT_FILENO) == 1 && !options.once
     let color = interactive && !options.noColor && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
-    let width = Int(ProcessInfo.processInfo.environment["COLUMNS"] ?? "") ?? 100
-    let renderer = DashboardRenderer(color: color, width: width)
     let monitor = LlamaTopMonitor(customMatchTerms: options.customMatchTerms)
 
     _ = monitor.nextSnapshot()
     Thread.sleep(forTimeInterval: min(0.25, options.interval))
 
     repeat {
+        let renderer = DashboardRenderer(color: color, width: terminalWidth(interactive: interactive))
         let dashboard = renderer.render(monitor.nextSnapshot())
         if interactive {
             print("\u{001B}[2J\u{001B}[H", terminator: "")

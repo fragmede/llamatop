@@ -12,7 +12,11 @@ final class LlamaTopMonitorTests: XCTestCase {
         let environment = SequenceEnvironment(ticks: [1_000, 1_100])
         let monitor = LlamaTopMonitor(
             processProbe: processProbe,
-            gpuProbe: StubGPUProbe(percent: 42),
+            cpuProbe: SequenceCPUCoreProbe(frames: [
+                [.init(user: 10, system: 10, idle: 80, nice: 0)],
+                [.init(user: 20, system: 20, idle: 160, nice: 0)],
+            ]),
+            gpuProbe: StubGPUProbe(statistics: .fixture(devicePercent: 42)),
             matcher: LlamaProcessMatcher(),
             environment: environment
         )
@@ -21,11 +25,14 @@ final class LlamaTopMonitorTests: XCTestCase {
         let sampled = monitor.nextSnapshot()
 
         XCTAssertEqual(warmup.activity, .warmingUp)
+        XCTAssertNil(warmup.systemCPU.cores[0].percent)
         XCTAssertEqual(sampled.activity, .busy)
         XCTAssertEqual(sampled.machineName, "Test Mac")
-        XCTAssertEqual(sampled.logicalCPUCount, 8)
+        XCTAssertEqual(sampled.systemCPU.performanceCoreCount, 6)
+        XCTAssertEqual(sampled.systemCPU.efficiencyCoreCount, 2)
+        XCTAssertEqual(try XCTUnwrap(sampled.systemCPU.cores[0].percent), 20, accuracy: 0.001)
         XCTAssertEqual(sampled.physicalMemoryBytes, 16_384)
-        XCTAssertEqual(sampled.gpuPercent, 42)
+        XCTAssertEqual(sampled.gpu?.devicePercent, 42)
         XCTAssertEqual(try XCTUnwrap(sampled.processes.first?.cpuPercent), 120, accuracy: 0.001)
         XCTAssertEqual(sampled.processes.first?.residentBytes, 2_048)
     }
@@ -45,17 +52,33 @@ private final class SequenceProcessProbe: ProcessProbing {
     }
 }
 
-private struct StubGPUProbe: GPUProbing {
-    let percent: Double?
+private final class SequenceCPUCoreProbe: CPUCoreProbing {
+    private let frames: [[CPUCoreTicks]]
+    private var index = 0
 
-    func utilization() -> Double? {
-        percent
+    init(frames: [[CPUCoreTicks]]) {
+        self.frames = frames
+    }
+
+    func capture() -> [CPUCoreTicks]? {
+        defer { index += 1 }
+        return frames[min(index, frames.count - 1)]
+    }
+}
+
+private struct StubGPUProbe: GPUProbing {
+    let statistics: GPUStatistics?
+
+    func capture() -> GPUStatistics? {
+        statistics
     }
 }
 
 private final class SequenceEnvironment: MonitorEnvironment {
     let machineName = "Test Mac"
     let logicalCPUCount = 8
+    let performanceCoreCount: Int? = 6
+    let efficiencyCoreCount: Int? = 2
     let physicalMemoryBytes: UInt64 = 16_384
     private let ticks: [UInt64]
     private var index = 0
@@ -71,6 +94,20 @@ private final class SequenceEnvironment: MonitorEnvironment {
     func currentUptimeTicks() -> UInt64 {
         defer { index += 1 }
         return ticks[min(index, ticks.count - 1)]
+    }
+}
+
+private extension GPUStatistics {
+    static func fixture(devicePercent: Double) -> GPUStatistics {
+        .init(
+            model: "Test GPU",
+            coreCount: 4,
+            devicePercent: devicePercent,
+            rendererPercent: 20,
+            tilerPercent: 10,
+            allocatedSystemMemoryBytes: 8_192,
+            inUseSystemMemoryBytes: 4_096
+        )
     }
 }
 
