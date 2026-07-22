@@ -39,6 +39,18 @@ final class RendererTests: XCTestCase {
         XCTAssertFalse(firstCoreLine.contains("C04"))
     }
 
+    func testRendersWhicheverTopologyCountsAreAvailable() {
+        let performanceOnly = DashboardRenderer(color: false, width: 80).render(
+            .notFoundFixture(performanceCoreCount: 12)
+        )
+        let efficiencyOnly = DashboardRenderer(color: false, width: 80).render(
+            .notFoundFixture(efficiencyCoreCount: 4)
+        )
+
+        XCTAssertTrue(performanceOnly.contains("CPU logical cores (system-wide · 12P)"))
+        XCTAssertTrue(efficiencyOnly.contains("CPU logical cores (system-wide · 4E)"))
+    }
+
     func testWidth100PacksFiveCoreCellsAndPreservesPartialLastRow() throws {
         let output = DashboardRenderer(color: false, width: 100).render(.busyFixture())
         let lines = output.split(separator: "\n")
@@ -128,14 +140,17 @@ private extension SystemSnapshot {
         )
     }
 
-    static func notFoundFixture() -> SystemSnapshot {
+    static func notFoundFixture(
+        performanceCoreCount: Int? = nil,
+        efficiencyCoreCount: Int? = nil
+    ) -> SystemSnapshot {
         .init(
             timestamp: Date(timeIntervalSince1970: 0),
             machineName: "Apple Silicon",
             systemCPU: .init(
                 cores: (0..<8).map { .init(index: $0, percent: 0) },
-                performanceCoreCount: nil,
-                efficiencyCoreCount: nil
+                performanceCoreCount: performanceCoreCount,
+                efficiencyCoreCount: efficiencyCoreCount
             ),
             physicalMemoryBytes: UInt64(16) * 1_024 * 1_024 * 1_024,
             gpu: nil,

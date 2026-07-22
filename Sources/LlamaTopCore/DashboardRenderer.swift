@@ -78,11 +78,15 @@ public struct DashboardRenderer: Sendable {
     }
 
     private func cpuHeading(_ statistics: SystemCPUStatistics) -> String {
-        if let performance = statistics.performanceCoreCount,
-           let efficiency = statistics.efficiencyCoreCount {
-            return "CPU logical cores (system-wide · \(performance)P + \(efficiency)E)"
+        var topology: [String] = []
+        if let performance = statistics.performanceCoreCount {
+            topology.append("\(performance)P")
         }
-        return "CPU logical cores (system-wide)"
+        if let efficiency = statistics.efficiencyCoreCount {
+            topology.append("\(efficiency)E")
+        }
+        let suffix = topology.isEmpty ? "" : " · \(topology.joined(separator: " + "))"
+        return "CPU logical cores (system-wide\(suffix))"
     }
 
     private func coreGrid(_ cores: [CPUCoreUsage]) -> [String] {
@@ -111,23 +115,16 @@ public struct DashboardRenderer: Sendable {
         }
 
         var lines = [truncated(heading, to: width)]
-        lines.append(metricLine(
-            label: "Device",
-            percent: statistics?.devicePercent,
-            value: percentValue(statistics?.devicePercent)
-        ))
-        if let renderer = statistics?.rendererPercent {
+        let pipelines: [(label: String, percent: Double?, alwaysVisible: Bool)] = [
+            ("Device", statistics?.devicePercent, true),
+            ("Renderer", statistics?.rendererPercent, false),
+            ("Tiler", statistics?.tilerPercent, false),
+        ]
+        for pipeline in pipelines where pipeline.alwaysVisible || pipeline.percent != nil {
             lines.append(metricLine(
-                label: "Renderer",
-                percent: renderer,
-                value: percentValue(renderer)
-            ))
-        }
-        if let tiler = statistics?.tilerPercent {
-            lines.append(metricLine(
-                label: "Tiler",
-                percent: tiler,
-                value: percentValue(tiler)
+                label: pipeline.label,
+                percent: pipeline.percent,
+                value: percentValue(pipeline.percent)
             ))
         }
         if let inUse = statistics?.inUseSystemMemoryBytes
