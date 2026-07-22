@@ -29,7 +29,7 @@ public struct Options: Equatable, Sendable {
                 guard index < arguments.count, let interval = TimeInterval(arguments[index]) else {
                     throw OptionsError("--interval requires a number of seconds")
                 }
-                guard interval >= 0.2, interval <= 60 else {
+                guard RefreshInterval.parse(arguments[index]) != nil else {
                     throw OptionsError("--interval must be between 0.2 and 60 seconds")
                 }
                 options.interval = interval
@@ -63,8 +63,12 @@ public struct Options: Equatable, Sendable {
       -v, --version           Show the version
 
     LIVE KEYS
+      ?/h                     Show all interactive commands
+      q                       Quit
+      s/d                     Change the refresh interval
       1                       Toggle per-core CPU detail and GPU core inventory
       m                       Toggle system memory layout and hardware details
+      P/M/T/N/C               Sort processes by CPU/RAM/time/PID/command
       Ctrl-C                  Quit and restore the terminal
 
     LlamaTop recognizes llama-* tools, llama.cpp legacy main/server binaries,

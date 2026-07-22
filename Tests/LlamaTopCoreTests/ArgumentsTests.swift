@@ -30,5 +30,7 @@ final class ArgumentsTests: XCTestCase {
         XCTAssertTrue(Options.help.contains(LlamaTopVersion.current))
         XCTAssertTrue(Options.help.contains("Toggle per-core CPU detail"))
         XCTAssertTrue(Options.help.contains("Toggle system memory layout"))
+        XCTAssertTrue(Options.help.contains("s/d"))
+        XCTAssertTrue(Options.help.contains("P/M/T/N/C"))
     }
 }

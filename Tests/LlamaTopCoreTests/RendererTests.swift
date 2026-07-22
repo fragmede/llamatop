@@ -25,7 +25,7 @@ final class RendererTests: XCTestCase {
         XCTAssertEqual(state.mode, .detailed)
         XCTAssertFalse(state.showsMemoryDetails)
 
-        XCTAssertTrue(state.handle(key: UInt8(ascii: "m")))
+        XCTAssertTrue(state.handle(key: UInt8(ascii: "M")))
         XCTAssertEqual(state.mode, .detailed)
         XCTAssertTrue(state.showsMemoryDetails)
 
@@ -63,6 +63,53 @@ final class RendererTests: XCTestCase {
             showMemoryDetails: true
         )
 
+        XCTAssertTrue(
+            output.split(separator: "\n", omittingEmptySubsequences: false)
+                .allSatisfy { $0.count <= 60 }
+        )
+    }
+
+    func testProcessViewHonorsSortDirectionIdleFilterLimitAndCommandMode() throws {
+        let snapshot = SystemSnapshot.processViewFixture()
+        var state = DashboardDisplayState(mode: .summary, showsMemoryDetails: false)
+
+        XCTAssertEqual(state.action(for: UInt8(ascii: "M")), .redraw)
+        var output = DashboardRenderer(color: false, width: 100).render(snapshot, state: state)
+        XCTAssertLessThan(
+            try XCTUnwrap(output.range(of: "memory-heavy")?.lowerBound),
+            try XCTUnwrap(output.range(of: "cpu-heavy")?.lowerBound)
+        )
+
+        XCTAssertEqual(state.action(for: UInt8(ascii: "R")), .redraw)
+        output = DashboardRenderer(color: false, width: 100).render(snapshot, state: state)
+        XCTAssertLessThan(
+            try XCTUnwrap(output.range(of: "cpu-heavy")?.lowerBound),
+            try XCTUnwrap(output.range(of: "memory-heavy")?.lowerBound)
+        )
+
+        XCTAssertEqual(state.action(for: UInt8(ascii: "i")), .redraw)
+        state.setProcessLimit(.maximum(2))
+        XCTAssertEqual(state.action(for: UInt8(ascii: "c")), .redraw)
+        output = DashboardRenderer(color: false, width: 100).render(snapshot, state: state)
+
+        XCTAssertTrue(output.contains("Processes 2/4"))
+        XCTAssertFalse(output.contains("idle-worker"))
+        XCTAssertFalse(output.contains("--model"))
+    }
+
+    func testInteractiveHelpDocumentsSupportedAndOmittedCommandsWithinWidth() {
+        let state = DashboardDisplayState(mode: .summary, showsMemoryDetails: false)
+        let output = DashboardRenderer(color: false, width: 60).renderHelp(
+            state: state,
+            refreshInterval: 1
+        )
+
+        XCTAssertTrue(output.contains("s/d"))
+        XCTAssertTrue(output.contains("P/M/T/N/C"))
+        XCTAssertTrue(output.contains("kill/renice"))
+        XCTAssertTrue(output.contains("Ctrl-U"))
+        XCTAssertTrue(output.contains("Ctrl-D"))
+        XCTAssertTrue(output.contains("Ctrl-C quits"))
         XCTAssertTrue(
             output.split(separator: "\n", omittingEmptySubsequences: false)
                 .allSatisfy { $0.count <= 60 }
@@ -242,6 +289,58 @@ private extension SystemSnapshot {
             physicalMemoryBytes: UInt64(16) * 1_024 * 1_024 * 1_024,
             gpu: nil,
             processes: []
+        )
+    }
+
+    static func processViewFixture() -> SystemSnapshot {
+        let gib = UInt64(1_024 * 1_024 * 1_024)
+        let base = busyFixture()
+        let processes = [
+            MonitoredProcess(
+                pid: 104,
+                parentPID: 1,
+                cpuPercent: 800,
+                residentBytes: gib,
+                elapsedSeconds: 10,
+                executable: "/usr/local/bin/cpu-heavy",
+                command: "cpu-heavy --model cpu.gguf"
+            ),
+            MonitoredProcess(
+                pid: 103,
+                parentPID: 1,
+                cpuPercent: 100,
+                residentBytes: 20 * gib,
+                elapsedSeconds: 20,
+                executable: "/usr/local/bin/memory-heavy",
+                command: "memory-heavy --model memory.gguf"
+            ),
+            MonitoredProcess(
+                pid: 102,
+                parentPID: 1,
+                cpuPercent: 50,
+                residentBytes: 2 * gib,
+                elapsedSeconds: 500,
+                executable: "/usr/local/bin/oldest-worker",
+                command: "oldest-worker --model old.gguf"
+            ),
+            MonitoredProcess(
+                pid: 101,
+                parentPID: 1,
+                cpuPercent: 0,
+                residentBytes: 3 * gib,
+                elapsedSeconds: 30,
+                executable: "/usr/local/bin/idle-worker",
+                command: "idle-worker --model idle.gguf"
+            ),
+        ]
+        return SystemSnapshot(
+            timestamp: base.timestamp,
+            machineName: base.machineName,
+            systemCPU: base.systemCPU,
+            physicalMemoryBytes: base.physicalMemoryBytes,
+            memory: base.memory,
+            gpu: base.gpu,
+            processes: processes
         )
     }
 }

@@ -1,37 +1,5 @@
 import Foundation
 
-public enum DashboardMode: Equatable, Sendable {
-    case summary
-    case detailed
-
-    public mutating func toggle() {
-        self = self == .summary ? .detailed : .summary
-    }
-}
-
-public struct DashboardDisplayState: Equatable, Sendable {
-    public private(set) var mode: DashboardMode
-    public private(set) var showsMemoryDetails: Bool
-
-    public init(mode: DashboardMode, showsMemoryDetails: Bool) {
-        self.mode = mode
-        self.showsMemoryDetails = showsMemoryDetails
-    }
-
-    @discardableResult
-    public mutating func handle(key: UInt8) -> Bool {
-        switch key {
-        case UInt8(ascii: "1"):
-            mode.toggle()
-        case UInt8(ascii: "m"), UInt8(ascii: "M"):
-            showsMemoryDetails.toggle()
-        default:
-            return false
-        }
-        return true
-    }
-}
-
 public struct DashboardRenderer: Sendable {
     private let color: Bool
     private let width: Int
@@ -46,6 +14,21 @@ public struct DashboardRenderer: Sendable {
         mode: DashboardMode = .detailed,
         showMemoryDetails: Bool = false
     ) -> String {
+        render(
+            snapshot,
+            state: DashboardDisplayState(
+                mode: mode,
+                showsMemoryDetails: showMemoryDetails
+            )
+        )
+    }
+
+    public func render(
+        _ snapshot: SystemSnapshot,
+        state: DashboardDisplayState
+    ) -> String {
+        let mode = state.mode
+        let showMemoryDetails = state.showsMemoryDetails
         let processCount = snapshot.processes.count
         let coreCount = max(1, snapshot.systemCPU.cores.count)
         let normalizedLlamaCPU = snapshot.totalCPUPercent / (Double(coreCount) * 100) * 100
@@ -99,12 +82,24 @@ public struct DashboardRenderer: Sendable {
         ))
         lines.append("")
 
+        let displayedProcesses = processesForDisplay(snapshot.processes, state: state)
         if snapshot.processes.isEmpty {
             lines.append("No llama.cpp process found.")
             lines.append("For renamed wrappers, try --match TEXT.")
         } else {
-            lines.append(processHeader)
-            lines.append(contentsOf: snapshot.processes.map(processLine))
+            lines.append(processViewHeading(
+                displayedCount: displayedProcesses.count,
+                totalCount: snapshot.processes.count,
+                state: state
+            ))
+            if displayedProcesses.isEmpty {
+                lines.append("No processes match the current view.")
+            } else {
+                lines.append(processHeader(showsFullCommand: state.showsFullCommand))
+                lines.append(contentsOf: displayedProcesses.map {
+                    processLine($0, showsFullCommand: state.showsFullCommand)
+                })
+            }
         }
 
         lines.append("")
@@ -115,6 +110,52 @@ public struct DashboardRenderer: Sendable {
             lines.append("Memory bars are system-wide VM categories.")
         }
         return lines.joined(separator: "\n")
+    }
+
+    public func renderHelp(
+        state: DashboardDisplayState,
+        refreshInterval: TimeInterval
+    ) -> String {
+        let direction = state.sortDescending ? "descending" : "ascending"
+        let lines = [
+            styled("LLAMATOP HELP", code: "1;36"),
+            "",
+            "Global",
+            "  ?/h       Show this help; any other key returns",
+            "  q         Quit",
+            "  s/d       Change refresh delay (0.2–60 seconds)",
+            "            Backspace delete · Ctrl-U clear",
+            "            Enter apply · Ctrl-G/Ctrl-D cancel",
+            "            Ctrl-C quits LlamaTop",
+            "  Space/↵   Refresh now",
+            "  Ctrl-L    Redraw the current sample",
+            "",
+            "Summary",
+            "  1         Toggle CPU/GPU detail",
+            "  m         Toggle memory layout",
+            "",
+            "Processes",
+            "  P/M/T/N/C Sort by CPU/RAM/time/PID/command",
+            "  o         Prompt for a sort field",
+            "  R         Reverse sort direction",
+            "  c         Toggle full command / executable name",
+            "  i         Hide/show known-idle processes",
+            "  n/#       Limit process rows (0 means all)",
+            "  =         Clear idle filter and row limit",
+            "  z         Toggle color when color is allowed",
+            "",
+            "Current: \(String(format: "%.1fs", refreshInterval)) · "
+                + "\(state.processSortKey.displayName) \(direction) · "
+                + state.processLimit.displayName,
+            "",
+            "Not applicable or intentionally omitted",
+            "  kill/renice and signal commands (destructive)",
+            "  user/thread views (not collected by LlamaTop)",
+            "  field editor, multi-window, scrolling/search, config",
+            "",
+            "Press any other key to return.",
+        ]
+        return lines.map { truncated($0, to: width) }.joined(separator: "\n")
     }
 
     private func header(machineName: String) -> String {
@@ -299,11 +340,30 @@ public struct DashboardRenderer: Sendable {
         percent.map { String(format: "%.1f%% system-wide", clamped($0)) } ?? "unavailable"
     }
 
-    private var processHeader: String {
-        "   PID    CPU       RAM       TIME  COMMAND"
+    private func processViewHeading(
+        displayedCount: Int,
+        totalCount: Int,
+        state: DashboardDisplayState
+    ) -> String {
+        let direction = state.sortDescending ? "↓" : "↑"
+        let commandMode = state.showsFullCommand ? "command" : "name"
+        let idleMode = state.hidesIdleProcesses ? "active only" : "idle shown"
+        return truncated(
+            "Processes \(displayedCount)/\(totalCount) · "
+                + "\(state.processSortKey.displayName)\(direction) · "
+                + "\(commandMode) · \(idleMode) · \(state.processLimit.displayName)",
+            to: width
+        )
     }
 
-    private func processLine(_ process: MonitoredProcess) -> String {
+    private func processHeader(showsFullCommand: Bool) -> String {
+        "   PID    CPU       RAM       TIME  " + (showsFullCommand ? "COMMAND" : "NAME")
+    }
+
+    private func processLine(
+        _ process: MonitoredProcess,
+        showsFullCommand: Bool
+    ) -> String {
         let cpu = process.cpuPercent.map { String(format: "%6.1f%%", $0) } ?? " warmup"
         let prefix = String(
             format: "%6d %@ %9@ %10@  ",
@@ -312,7 +372,57 @@ public struct DashboardRenderer: Sendable {
             bytes(process.residentBytes),
             duration(process.elapsedSeconds)
         )
-        return prefix + truncated(process.command, to: max(1, width - prefix.count))
+        let executableName = URL(fileURLWithPath: process.executable).lastPathComponent
+        let displayedCommand = showsFullCommand ? process.command : executableName
+        return prefix + truncated(displayedCommand, to: max(1, width - prefix.count))
+    }
+
+    private func processesForDisplay(
+        _ processes: [MonitoredProcess],
+        state: DashboardDisplayState
+    ) -> [MonitoredProcess] {
+        var result = state.hidesIdleProcesses
+            ? processes.filter { !ActivityClassifier.isKnownIdle($0) }
+            : processes
+        result.sort { left, right in
+            let comparison = compare(left, right, by: state.processSortKey)
+            if comparison == .orderedSame { return left.pid < right.pid }
+            return state.sortDescending
+                ? comparison == .orderedDescending
+                : comparison == .orderedAscending
+        }
+        if let maximum = state.processLimit.maximum {
+            result = Array(result.prefix(maximum))
+        }
+        return result
+    }
+
+    private func compare(
+        _ left: MonitoredProcess,
+        _ right: MonitoredProcess,
+        by key: ProcessSortKey
+    ) -> ComparisonResult {
+        switch key {
+        case .cpu:
+            compare(left.cpuPercent ?? -1, right.cpuPercent ?? -1)
+        case .memory:
+            compare(left.residentBytes, right.residentBytes)
+        case .elapsedTime:
+            compare(left.elapsedSeconds, right.elapsedSeconds)
+        case .pid:
+            compare(left.pid, right.pid)
+        case .command:
+            left.command.localizedCaseInsensitiveCompare(right.command)
+        }
+    }
+
+    private func compare<Value: Comparable>(
+        _ left: Value,
+        _ right: Value
+    ) -> ComparisonResult {
+        if left < right { return .orderedAscending }
+        if left > right { return .orderedDescending }
+        return .orderedSame
     }
 
     private func metricLine(label: String, percent: Double?, value: String) -> String {

@@ -127,3 +127,37 @@ Build a dependency-free macOS terminal dashboard that answers: “Is llama.cpp a
 - Verification: all 45 tests and the warnings-as-errors optimized build pass after the review fix.
 - Live terminal: `m` and `1` toggle independently; `Ctrl-C` restores canonical input and echo.
 - Live memory: Mach VM and swap counters render with 128 GiB LPDDR5/Hynix hardware details; unavailable bank/channel telemetry is explicitly labelled.
+
+## Top-compatible interactive controls
+
+### Scope
+
+- [x] Add `s` and `d` prompts for changing the 0.2–60 second refresh interval without restarting.
+- [x] Add `?`/`h` help, `q` quit, Space/Enter refresh, and Ctrl-L redraw commands.
+- [x] Add process sorting by CPU (`P`), RAM (`M`), elapsed time (`T`), PID (`N`), and command (`C`), plus `R` reverse order.
+- [x] Add `c` command/executable display, `i` idle filtering, and `n`/`#` process-limit controls.
+- [x] Add `z` runtime color toggling when color was not disabled by the environment or command line.
+- [x] Keep `1` and `m` behavior intact and make every supported key discoverable in live help and the README.
+- [x] Document unsupported top features: destructive process control, user/thread views, field editors, multi-window mode, scrolling/search, and persistent configuration.
+
+### Implementation plan
+
+- [x] Model keyboard commands and process-table preferences in a testable display state.
+- [x] Add reusable validated prompts while preserving immediate single-key input and terminal restoration.
+- [x] Make process rendering honor sorting, direction, filtering, limits, and command display preferences.
+- [x] Add a responsive help screen and status footer describing current view state.
+
+### Verification
+
+- [x] Test key mapping, prompt validation, sorting/filtering/limits, help, and minimum-width rendering.
+- [x] Run the complete suite and warnings-as-errors optimized build.
+- [x] Exercise `s`, help, sorting, filtering, redraw, color, and quit in a live pseudo-terminal.
+- [x] Run Standards and Spec reviews and resolve actionable findings.
+
+### Review
+
+- Standards re-review: no remaining documented-standard violations or actionable code smells; the existing public keyboard-state API remains source-compatible.
+- Spec re-review: no remaining missing, partial, incorrect, or out-of-scope behavior after making `q` global and fully documenting prompt controls.
+- Verification: all 52 tests pass with warnings treated as errors; the optimized 0.4.0 build succeeds.
+- Live terminal: refresh prompts, help, sorting, filtering, redraw, color toggling, and quitting behave immediately; Ctrl-C and `q` restore canonical input and echo.
+- Safety boundary: destructive process control and general-purpose top views are documented as intentionally omitted.

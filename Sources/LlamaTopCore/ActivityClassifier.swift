@@ -8,4 +8,9 @@ public enum ActivityClassifier {
         if processes.contains(where: { $0.cpuPercent == nil }) { return .warmingUp }
         return .idle
     }
+
+    static func isKnownIdle(_ process: MonitoredProcess) -> Bool {
+        guard let cpuPercent = process.cpuPercent else { return false }
+        return cpuPercent < cpuNoiseFloor
+    }
 }

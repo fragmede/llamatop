@@ -16,6 +16,11 @@ func isTerminationRequested() -> Bool {
     terminationRequested != 0
 }
 
+enum ValidatedPromptResponse<Value> {
+    case value(Value)
+    case invalid
+}
+
 final class TerminalInputSession {
     private let fileDescriptor: Int32
     private var originalAttributes: termios
@@ -44,12 +49,11 @@ final class TerminalInputSession {
         isRestored = true
     }
 
-    func waitForKey(timeout: TimeInterval) -> UInt8? {
+    func waitForKey(timeout: TimeInterval?) -> UInt8? {
         var descriptor = pollfd(fd: fileDescriptor, events: Int16(POLLIN), revents: 0)
-        let timeoutMilliseconds = Int32(min(
-            Double(Int32.max),
-            max(0, timeout * 1_000)
-        ))
+        let timeoutMilliseconds = timeout.map {
+            Int32(min(Double(Int32.max), max(0, $0 * 1_000)))
+        } ?? -1
 
         while !isTerminationRequested() {
             let result = poll(&descriptor, 1, timeoutMilliseconds)
@@ -63,5 +67,51 @@ final class TerminalInputSession {
             return read(fileDescriptor, &byte, 1) == 1 ? byte : nil
         }
         return nil
+    }
+
+    func readResponse(prompt: String) -> String? {
+        print("\n\(prompt)", terminator: "")
+        fflush(stdout)
+
+        var bytes: [UInt8] = []
+        while !isTerminationRequested() {
+            guard let byte = waitForKey(timeout: nil) else { return nil }
+            switch byte {
+            case 10, 13:
+                print()
+                return String(decoding: bytes, as: UTF8.self)
+            case 3, 4, 7:
+                print()
+                return nil
+            case 8 where !bytes.isEmpty, 127 where !bytes.isEmpty:
+                bytes.removeLast()
+                fputs("\u{8} \u{8}", stdout)
+                fflush(stdout)
+            case 21:
+                while !bytes.isEmpty {
+                    bytes.removeLast()
+                    fputs("\u{8} \u{8}", stdout)
+                }
+                fflush(stdout)
+            case 32...126:
+                bytes.append(byte)
+                fputc(Int32(byte), stdout)
+                fflush(stdout)
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    func readValidatedResponse<Value>(
+        prompt: String,
+        parser: (String) -> Value?
+    ) -> ValidatedPromptResponse<Value>? {
+        guard let response = readResponse(prompt: prompt) else { return nil }
+        let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        guard let value = parser(normalized) else { return .invalid }
+        return .value(value)
     }
 }

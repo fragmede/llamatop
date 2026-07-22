@@ -25,13 +25,20 @@ do {
 
     let interactive = isatty(STDOUT_FILENO) == 1 && !options.once
     let acceptsInput = interactive && isatty(STDIN_FILENO) == 1
-    let color = interactive && !options.noColor && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
+    let colorAllowed = interactive
+        && !options.noColor
+        && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
     let monitor = LlamaTopMonitor(customMatchTerms: options.customMatchTerms)
     let terminalInput = acceptsInput ? TerminalInputSession() : nil
     var displayState = DashboardDisplayState(
         mode: terminalInput == nil ? .detailed : .summary,
-        showsMemoryDetails: terminalInput == nil
+        showsMemoryDetails: terminalInput == nil,
+        colorEnabled: colorAllowed,
+        allowsColor: colorAllowed
     )
+    var refreshInterval = options.interval
+    var notice: String?
+    var isRunning = true
 
     if terminalInput != nil {
         installTerminationHandlers()
@@ -44,37 +51,98 @@ do {
     Thread.sleep(forTimeInterval: min(0.25, options.interval))
     var snapshot = monitor.nextSnapshot()
 
-    while !isTerminationRequested() {
-        let renderer = DashboardRenderer(color: color, width: terminalWidth(interactive: interactive))
-        let dashboard = renderer.render(
-            snapshot,
-            mode: displayState.mode,
-            showMemoryDetails: displayState.showsMemoryDetails
+    while isRunning, !isTerminationRequested() {
+        let renderer = DashboardRenderer(
+            color: displayState.colorEnabled,
+            width: terminalWidth(interactive: interactive)
         )
+        let dashboard = displayState.showsHelp
+            ? renderer.renderHelp(state: displayState, refreshInterval: refreshInterval)
+            : renderer.render(snapshot, state: displayState)
         if interactive {
             print("\u{001B}[2J\u{001B}[H", terminator: "")
         }
         print(dashboard)
         if interactive {
-            let detailAction = displayState.mode == .summary ? "show details" : "hide details"
-            let memoryAction = displayState.showsMemoryDetails ? "hide memory" : "show memory"
-            var controls = "Refresh \(String(format: "%.1fs", options.interval))"
-            if terminalInput != nil {
-                controls += " · 1: \(detailAction)"
-                controls += " · m: \(memoryAction)"
+            if let message = notice {
+                print("\n\(message)", terminator: "")
+                notice = nil
             }
-            controls += " · Ctrl-C to quit"
-            print("\n\(controls)", terminator: "")
+            if !displayState.showsHelp {
+                var controls = "Refresh \(String(format: "%.1fs", refreshInterval))"
+                if terminalInput != nil {
+                    controls += " · ?: help · q: quit"
+                }
+                controls += " · Ctrl-C to quit"
+                print("\n\(controls)", terminator: "")
+            }
             fflush(stdout)
-            let key = terminalInput?.waitForKey(timeout: options.interval)
+            let key = terminalInput?.waitForKey(
+                timeout: displayState.showsHelp ? nil : refreshInterval
+            )
             if isTerminationRequested() { break }
-            if let key, displayState.handle(key: key) {
+            if terminalInput == nil {
+                Thread.sleep(forTimeInterval: refreshInterval)
+                snapshot = monitor.nextSnapshot()
                 continue
             }
-            if terminalInput == nil {
-                Thread.sleep(forTimeInterval: options.interval)
+            guard let key else {
+                snapshot = monitor.nextSnapshot()
+                continue
             }
-            snapshot = monitor.nextSnapshot()
+
+            switch displayState.action(for: key) {
+            case .none, .redraw:
+                continue
+            case .refresh:
+                snapshot = monitor.nextSnapshot()
+                continue
+            case .quit:
+                isRunning = false
+            case .promptRefreshInterval:
+                let prompt = "Refresh seconds [\(String(format: "%.1f", refreshInterval))]: "
+                switch terminalInput?.readValidatedResponse(
+                    prompt: prompt,
+                    parser: RefreshInterval.parse
+                ) {
+                case let .value(interval):
+                    refreshInterval = interval
+                    notice = "Refresh interval set to \(String(format: "%.1fs", interval))."
+                case .invalid:
+                    notice = "Refresh interval must be between 0.2 and 60 seconds."
+                case nil:
+                    break
+                }
+                continue
+            case .promptProcessLimit:
+                switch terminalInput?.readValidatedResponse(
+                    prompt: "Maximum process rows (0 for all): ",
+                    parser: ProcessCountLimit.parse
+                ) {
+                case let .value(limit):
+                    displayState.setProcessLimit(limit)
+                    notice = "Process row limit updated."
+                case .invalid:
+                    notice = "Process row limit must be a non-negative integer."
+                case nil:
+                    break
+                }
+                continue
+            case .promptSort:
+                switch terminalInput?.readValidatedResponse(
+                    prompt: "Sort by cpu, ram, time, pid, or command: ",
+                    parser: ProcessSortKey.parse
+                ) {
+                case let .value(sortKey):
+                    displayState.selectSort(sortKey)
+                    notice = "Process sort updated."
+                case .invalid:
+                    notice = "Unknown sort field. Use cpu, ram, time, pid, or command."
+                case nil:
+                    break
+                }
+                continue
+            }
         }
         if !interactive { break }
     }
