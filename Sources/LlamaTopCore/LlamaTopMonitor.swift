@@ -3,6 +3,7 @@ import Foundation
 public final class LlamaTopMonitor {
     private let processProbe: any ProcessProbing
     private let cpuProbe: any CPUCoreProbing
+    private let memoryProbe: any MemoryProbing
     private let gpuProbe: any GPUProbing
     private let matcher: LlamaProcessMatcher
     private let environment: any MonitorEnvironment
@@ -14,6 +15,7 @@ public final class LlamaTopMonitor {
         self.init(
             processProbe: DarwinProcessProbe(),
             cpuProbe: DarwinCPUCoreProbe(),
+            memoryProbe: DarwinMemoryProbe(),
             gpuProbe: AppleGPUProbe(),
             matcher: LlamaProcessMatcher(customTerms: customMatchTerms),
             environment: SystemMonitorEnvironment()
@@ -23,12 +25,14 @@ public final class LlamaTopMonitor {
     init(
         processProbe: any ProcessProbing,
         cpuProbe: any CPUCoreProbing,
+        memoryProbe: any MemoryProbing,
         gpuProbe: any GPUProbing,
         matcher: LlamaProcessMatcher,
         environment: any MonitorEnvironment
     ) {
         self.processProbe = processProbe
         self.cpuProbe = cpuProbe
+        self.memoryProbe = memoryProbe
         self.gpuProbe = gpuProbe
         self.matcher = matcher
         self.environment = environment
@@ -94,6 +98,7 @@ public final class LlamaTopMonitor {
                 efficiencyCoreCount: environment.efficiencyCoreCount
             ),
             physicalMemoryBytes: environment.physicalMemoryBytes,
+            memory: memoryProbe.capture(),
             gpu: gpuProbe.capture(),
             processes: processes
         )

@@ -88,11 +88,52 @@ public struct GPUStatistics: Equatable, Sendable {
     }
 }
 
+public struct MemoryStatistics: Equatable, Sendable {
+    public let activeBytes: UInt64
+    public let inactiveBytes: UInt64
+    public let wiredBytes: UInt64
+    public let compressedBytes: UInt64
+    public let freeBytes: UInt64
+    public let pageSizeBytes: UInt64
+    public let cacheLineBytes: UInt64?
+    public let swapTotalBytes: UInt64?
+    public let swapUsedBytes: UInt64?
+    public let memoryType: String?
+    public let manufacturer: String?
+
+    public init(
+        activeBytes: UInt64,
+        inactiveBytes: UInt64,
+        wiredBytes: UInt64,
+        compressedBytes: UInt64,
+        freeBytes: UInt64,
+        pageSizeBytes: UInt64,
+        cacheLineBytes: UInt64?,
+        swapTotalBytes: UInt64?,
+        swapUsedBytes: UInt64?,
+        memoryType: String?,
+        manufacturer: String?
+    ) {
+        self.activeBytes = activeBytes
+        self.inactiveBytes = inactiveBytes
+        self.wiredBytes = wiredBytes
+        self.compressedBytes = compressedBytes
+        self.freeBytes = freeBytes
+        self.pageSizeBytes = pageSizeBytes
+        self.cacheLineBytes = cacheLineBytes
+        self.swapTotalBytes = swapTotalBytes
+        self.swapUsedBytes = swapUsedBytes
+        self.memoryType = memoryType
+        self.manufacturer = manufacturer
+    }
+}
+
 public struct SystemSnapshot: Equatable, Sendable {
     public let timestamp: Date
     public let machineName: String
     public let systemCPU: SystemCPUStatistics
     public let physicalMemoryBytes: UInt64
+    public let memory: MemoryStatistics?
     public let gpu: GPUStatistics?
     public let processes: [MonitoredProcess]
 
@@ -101,6 +142,7 @@ public struct SystemSnapshot: Equatable, Sendable {
         machineName: String,
         systemCPU: SystemCPUStatistics,
         physicalMemoryBytes: UInt64,
+        memory: MemoryStatistics? = nil,
         gpu: GPUStatistics?,
         processes: [MonitoredProcess]
     ) {
@@ -108,6 +150,7 @@ public struct SystemSnapshot: Equatable, Sendable {
         self.machineName = machineName
         self.systemCPU = systemCPU
         self.physicalMemoryBytes = physicalMemoryBytes
+        self.memory = memory
         self.gpu = gpu
         self.processes = processes
     }

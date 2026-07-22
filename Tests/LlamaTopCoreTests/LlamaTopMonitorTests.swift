@@ -16,6 +16,7 @@ final class LlamaTopMonitorTests: XCTestCase {
                 [.init(user: 10, system: 10, idle: 80, nice: 0)],
                 [.init(user: 20, system: 20, idle: 160, nice: 0)],
             ]),
+            memoryProbe: StubMemoryProbe(statistics: .fixture()),
             gpuProbe: StubGPUProbe(statistics: .fixture(devicePercent: 42)),
             matcher: LlamaProcessMatcher(),
             environment: environment
@@ -32,6 +33,7 @@ final class LlamaTopMonitorTests: XCTestCase {
         XCTAssertEqual(sampled.systemCPU.efficiencyCoreCount, 2)
         XCTAssertEqual(try XCTUnwrap(sampled.systemCPU.cores[0].percent), 20, accuracy: 0.001)
         XCTAssertEqual(sampled.physicalMemoryBytes, 16_384)
+        XCTAssertEqual(sampled.memory?.wiredBytes, 4_096)
         XCTAssertEqual(sampled.gpu?.devicePercent, 42)
         XCTAssertEqual(try XCTUnwrap(sampled.processes.first?.cpuPercent), 120, accuracy: 0.001)
         XCTAssertEqual(sampled.processes.first?.residentBytes, 2_048)
@@ -74,6 +76,14 @@ private struct StubGPUProbe: GPUProbing {
     }
 }
 
+private struct StubMemoryProbe: MemoryProbing {
+    let statistics: MemoryStatistics?
+
+    func capture() -> MemoryStatistics? {
+        statistics
+    }
+}
+
 private final class SequenceEnvironment: MonitorEnvironment {
     let machineName = "Test Mac"
     let logicalCPUCount = 8
@@ -107,6 +117,24 @@ private extension GPUStatistics {
             tilerPercent: 10,
             allocatedSystemMemoryBytes: 8_192,
             inUseSystemMemoryBytes: 4_096
+        )
+    }
+}
+
+private extension MemoryStatistics {
+    static func fixture() -> MemoryStatistics {
+        .init(
+            activeBytes: 8_192,
+            inactiveBytes: 4_096,
+            wiredBytes: 4_096,
+            compressedBytes: 2_048,
+            freeBytes: 1_024,
+            pageSizeBytes: 16_384,
+            cacheLineBytes: 128,
+            swapTotalBytes: 8_192,
+            swapUsedBytes: 2_048,
+            memoryType: "LPDDR5",
+            manufacturer: "Test"
         )
     }
 }

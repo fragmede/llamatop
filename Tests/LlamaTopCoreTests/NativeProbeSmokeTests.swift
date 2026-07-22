@@ -35,4 +35,15 @@ final class NativeProbeSmokeTests: XCTestCase {
             }
         }
     }
+
+    func testMemoryProbeReturnsLiveVMStatistics() throws {
+        let statistics = try XCTUnwrap(DarwinMemoryProbe().capture())
+
+        XCTAssertGreaterThan(statistics.pageSizeBytes, 0)
+        XCTAssertGreaterThan(statistics.activeBytes, 0)
+        if let swapTotal = statistics.swapTotalBytes,
+           let swapUsed = statistics.swapUsedBytes {
+            XCTAssertGreaterThanOrEqual(swapTotal, swapUsed)
+        }
+    }
 }

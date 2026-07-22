@@ -62,8 +62,14 @@ public struct Options: Equatable, Sendable {
       -h, --help              Show this help
       -v, --version           Show the version
 
+    LIVE KEYS
+      1                       Toggle per-core CPU detail and GPU core inventory
+      m                       Toggle system memory layout and hardware details
+      Ctrl-C                  Quit and restore the terminal
+
     LlamaTop recognizes llama-* tools, llama.cpp legacy main/server binaries,
-    and python -m llama_cpp. Apple GPU utilization is always system-wide.
+    and python -m llama_cpp. Apple GPU utilization is always system-wide;
+    the GPU inventory shows detected hardware, not per-core utilization.
     """
 }
 

@@ -1,5 +1,37 @@
 import Foundation
 
+public enum DashboardMode: Equatable, Sendable {
+    case summary
+    case detailed
+
+    public mutating func toggle() {
+        self = self == .summary ? .detailed : .summary
+    }
+}
+
+public struct DashboardDisplayState: Equatable, Sendable {
+    public private(set) var mode: DashboardMode
+    public private(set) var showsMemoryDetails: Bool
+
+    public init(mode: DashboardMode, showsMemoryDetails: Bool) {
+        self.mode = mode
+        self.showsMemoryDetails = showsMemoryDetails
+    }
+
+    @discardableResult
+    public mutating func handle(key: UInt8) -> Bool {
+        switch key {
+        case UInt8(ascii: "1"):
+            mode.toggle()
+        case UInt8(ascii: "m"), UInt8(ascii: "M"):
+            showsMemoryDetails.toggle()
+        default:
+            return false
+        }
+        return true
+    }
+}
+
 public struct DashboardRenderer: Sendable {
     private let color: Bool
     private let width: Int
@@ -9,7 +41,11 @@ public struct DashboardRenderer: Sendable {
         self.width = min(200, max(60, width))
     }
 
-    public func render(_ snapshot: SystemSnapshot) -> String {
+    public func render(
+        _ snapshot: SystemSnapshot,
+        mode: DashboardMode = .detailed,
+        showMemoryDetails: Bool = false
+    ) -> String {
         let processCount = snapshot.processes.count
         let coreCount = max(1, snapshot.systemCPU.cores.count)
         let normalizedLlamaCPU = snapshot.totalCPUPercent / (Double(coreCount) * 100) * 100
@@ -37,17 +73,30 @@ public struct DashboardRenderer: Sendable {
                 percent: llamaMemoryPercent,
                 value: "\(bytes(snapshot.totalResidentBytes)) / \(bytes(snapshot.physicalMemoryBytes)) physical"
             ),
-            "",
-            cpuHeading(snapshot.systemCPU),
         ]
+        if showMemoryDetails {
+            lines.append("")
+            lines.append(contentsOf: memoryLines(
+                snapshot.memory,
+                physicalMemoryBytes: snapshot.physicalMemoryBytes
+            ))
+        }
+        lines.append("")
+        lines.append(cpuHeading(snapshot.systemCPU))
         lines.append(metricLine(
             label: "Total",
             percent: snapshot.systemCPU.averagePercent,
             value: percentValue(snapshot.systemCPU.averagePercent)
         ))
-        lines.append(contentsOf: coreGrid(snapshot.systemCPU.cores))
+        if mode == .detailed {
+            lines.append(contentsOf: coreGrid(snapshot.systemCPU.cores))
+        }
         lines.append("")
-        lines.append(contentsOf: gpuLines(snapshot.gpu, physicalMemoryBytes: snapshot.physicalMemoryBytes))
+        lines.append(contentsOf: gpuLines(
+            snapshot.gpu,
+            physicalMemoryBytes: snapshot.physicalMemoryBytes,
+            mode: mode
+        ))
         lines.append("")
 
         if snapshot.processes.isEmpty {
@@ -62,6 +111,9 @@ public struct DashboardRenderer: Sendable {
         lines.append("Core and GPU bars are system-wide.")
         lines.append("Llama CPU and RAM are llama.cpp-only.")
         lines.append("GPU pipelines are not separate GPUs or additive.")
+        if showMemoryDetails {
+            lines.append("Memory bars are system-wide VM categories.")
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -103,7 +155,83 @@ public struct DashboardRenderer: Sendable {
         return String(format: "C%02d", core.index) + " " + bar(core.percent, length: 7) + " " + value
     }
 
-    private func gpuLines(_ statistics: GPUStatistics?, physicalMemoryBytes: UInt64) -> [String] {
+    private func memoryLines(
+        _ statistics: MemoryStatistics?,
+        physicalMemoryBytes: UInt64
+    ) -> [String] {
+        var heading = "Memory layout (system-wide · unified"
+        if let memoryType = statistics?.memoryType, !memoryType.isEmpty {
+            heading += " · \(memoryType)"
+        }
+        heading += ")"
+
+        guard let statistics else {
+            return [
+                truncated(heading, to: width),
+                "Memory telemetry unavailable",
+                "Banks/channels unavailable through macOS",
+            ]
+        }
+
+        let categories: [(label: String, byteCount: UInt64)] = [
+            ("Wired", statistics.wiredBytes),
+            ("Active", statistics.activeBytes),
+            ("Inactive", statistics.inactiveBytes),
+            ("Compressed", statistics.compressedBytes),
+            ("Free", statistics.freeBytes),
+        ]
+        let accountedBytes = categories.reduce(UInt64(0)) { partial, category in
+            let result = partial.addingReportingOverflow(category.byteCount)
+            return result.overflow ? UInt64.max : result.partialValue
+        }
+        let otherBytes = physicalMemoryBytes > accountedBytes
+            ? physicalMemoryBytes - accountedBytes
+            : 0
+
+        var lines = [truncated(heading, to: width)]
+        for category in categories + [("Other", otherBytes)] {
+            lines.append(metricLine(
+                label: category.label,
+                percent: percentage(
+                    numerator: category.byteCount,
+                    denominator: physicalMemoryBytes
+                ),
+                value: bytes(category.byteCount)
+            ))
+        }
+        if let swapTotal = statistics.swapTotalBytes,
+           let swapUsed = statistics.swapUsedBytes {
+            lines.append(metricLine(
+                label: "Swap",
+                percent: percentage(numerator: swapUsed, denominator: swapTotal),
+                value: "\(bytes(swapUsed)) / \(bytes(swapTotal))"
+            ))
+        }
+
+        var hardware = "\(bytes(physicalMemoryBytes))"
+        if let memoryType = statistics.memoryType, !memoryType.isEmpty {
+            hardware += " \(memoryType)"
+        }
+        hardware += " unified"
+        if let manufacturer = statistics.manufacturer, !manufacturer.isEmpty {
+            hardware += " · \(manufacturer)"
+        }
+        lines.append(truncated("Hardware   \(hardware)", to: width))
+
+        var pageDetails = "\(bytes(statistics.pageSizeBytes)) pages"
+        if let cacheLineBytes = statistics.cacheLineBytes {
+            pageDetails += " · \(bytes(cacheLineBytes)) cache line"
+        }
+        lines.append(truncated("Geometry   \(pageDetails)", to: width))
+        lines.append("Banks/channels unavailable through macOS")
+        return lines
+    }
+
+    private func gpuLines(
+        _ statistics: GPUStatistics?,
+        physicalMemoryBytes: UInt64,
+        mode: DashboardMode
+    ) -> [String] {
         var heading: String
         if let coreCount = statistics?.coreCount {
             heading = "Apple GPU (\(coreCount) cores · system-wide)"
@@ -120,7 +248,8 @@ public struct DashboardRenderer: Sendable {
             ("Renderer", statistics?.rendererPercent, false),
             ("Tiler", statistics?.tilerPercent, false),
         ]
-        for pipeline in pipelines where pipeline.alwaysVisible || pipeline.percent != nil {
+        for pipeline in pipelines
+        where pipeline.alwaysVisible || (mode == .detailed && pipeline.percent != nil) {
             lines.append(metricLine(
                 label: pipeline.label,
                 percent: pipeline.percent,
@@ -139,7 +268,24 @@ public struct DashboardRenderer: Sendable {
                 value: value
             ))
         }
+        if mode == .detailed, let coreCount = statistics?.coreCount, coreCount > 0 {
+            lines.append("")
+            lines.append(contentsOf: gpuCoreInventory(coreCount))
+        }
         return lines
+    }
+
+    private func gpuCoreInventory(_ coreCount: Int) -> [String] {
+        let groups = stride(from: 0, to: coreCount, by: 10).map { start in
+            String(repeating: "◆", count: min(10, coreCount - start))
+        }
+        let symbolLines = stride(from: 0, to: groups.count, by: 4).map { start in
+            let prefix = start == 0 ? "Cores " : "      "
+            return prefix + groups[start..<min(start + 4, groups.count)].joined(separator: " ")
+        }
+        return ["GPU cores (presence only; no per-core telemetry)"]
+            + symbolLines
+            + ["\(coreCount) detected · activity is aggregate"]
     }
 
     private func gpuMemoryValue(inUseBytes: UInt64?, allocatedBytes: UInt64?) -> String {
